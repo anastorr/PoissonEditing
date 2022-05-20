@@ -5,11 +5,13 @@ import os
 
 
 def clear_dir(path):
-    for file_name in os.listdir(path):
-        file = path + file_name
-        if os.path.isfile(file):
-            print("Removing ", file_name)
-            os.remove(file)
+    if os.path.exists(path):
+        for file_name in os.listdir(path):
+            file = path + file_name
+            if os.path.isfile(file):
+                os.remove(file)
+    else:
+        os.makedirs(path)
 
 
 def gaussian_pyramid(image, n, num, is_mask, filt_size=5, std=1):
@@ -25,15 +27,13 @@ def gaussian_pyramid(image, n, num, is_mask, filt_size=5, std=1):
 
 def laplacian_pyramid(image, n, num, filt_size=5, std=1):
     gauss_pyramid = gaussian_pyramid(image, n, num, False, filt_size=filt_size, std=std)
-    pyramid = []
+    pyramid = [gauss_pyramid[-1]]
     for i in range(1, n):
-        size = (gauss_pyramid[i - 1].shape[1], gauss_pyramid[i - 1].shape[0])
-        pyramid.append(-cv.resize(gauss_pyramid[i], size) + gauss_pyramid[i - 1])
-        plt.imsave(f'images/example{num}/laplacian pyramid/{i}.jpg',
-                   np.flip((pyramid[i - 1] - pyramid[i - 1].min())/(pyramid[i - 1].max() - pyramid[i - 1].min()),
+        pyramid.append(-cv.GaussianBlur(gauss_pyramid[-i-1], (filt_size, filt_size), std, std) + gauss_pyramid[-i-1])
+        plt.imsave(f'images/example{num}/laplacian pyramid/{n-i}.jpg',
+                   np.flip((pyramid[i] - pyramid[i].min())/(pyramid[i].max() - pyramid[i].min()),
                            axis=2))
-    pyramid.append(gauss_pyramid[-1])
-    return pyramid
+    return list(reversed(pyramid))
 
 
 # sum up all levels of a pyramid
@@ -82,4 +82,6 @@ def example(num, method, use_grad_mask=True, mask_filt_size=5, **kwargs):
 
 
 if __name__ == '__main__':
-    example(4, multires_blend, mask_filt_size=155, n=7, filt_size=13, std=2)
+    example(4, multires_blend, mask_filt_size=15, n=9, filt_size=5, std=1)
+
+# TODO: apply gaussian filter or rescale in laplacian pyramid?

@@ -8,4 +8,4 @@ def create_gif(path, out):
     img.save(fp=out, format='GIF', append_images=imgs,
              save_all=True, duration=200, loop=0)
 
-create_gif('images/example5/progress/', 'images/example5/progress.gif')
+create_gif('multiresolution/images/example4/progress/', 'multiresolution/images/example4/progress.gif')
