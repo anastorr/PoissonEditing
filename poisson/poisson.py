@@ -61,7 +61,7 @@ def A(f, Np, ind):
     return result
 
 
-def poisson_blending(source, target, mask, eps=0.001, channel=0):
+def poisson_blending(source, target, mask, n, eps=0.001, channel=0, guidance='classic'):
     ind_mask = np.nonzero(mask)
     N = ind_mask[0].size
     f = np.zeros(N+1)
@@ -72,15 +72,29 @@ def poisson_blending(source, target, mask, eps=0.001, channel=0):
     target_border_masked = target*border_mask
 
     left_x, left_y, right_x, right_y, bottom_x, bottom_y, top_x, top_y = shift_ind(mask)
-
     b1 = (target_border_masked[left_x, left_y] + target_border_masked[right_x, right_y] +
-          target_border_masked[top_x, top_y] + target_border_masked[bottom_x, bottom_y]).reshape(mask.shape)[ind_mask]
+          target_border_masked[top_x, top_y] + target_border_masked[bottom_x, bottom_y]).reshape(mask.shape)[
+        ind_mask]
     b2 = (source[left_x, left_y] + source[right_x, right_y] +
           source[top_x, top_y] + source[bottom_x, bottom_y]).reshape(mask.shape)[ind_mask]
-    b = - b2 + b1 + Np*source[ind_mask]
+
+    if guidance=='classic':
+        b = - b2 + b1 + Np*source[ind_mask]
+
+    elif guidance=='mix':
+        b21 = (target[left_x, left_y] + target[right_x, right_y] +
+               target[top_x, top_y] + target[bottom_x, bottom_y]).reshape(mask.shape)[ind_mask]
+        mix = abs(Np*source[ind_mask] - b2) > abs(Np*target[ind_mask] - b21)
+        mixing = np.zeros(mask.shape)
+        mixing[ind_mask] = mix
+        plt.imsave(f'images/example{n}/mixing.png', mixing, cmap='gray')
+        b = np.where(mix, - b2 + b1 + Np*source[ind_mask], - b21 + b1 + Np*target[ind_mask])
+
+    else:
+        raise ValueError('Wrong guidance field type! Available types \'classic\', \'mix\'')
 
     idx = neighbours(mask)
-    delta = np.zeros(N+1)
+    delta = np.zeros(N + 1)
     delta[:-1] = A(f, Np, idx)[:-1] - b
     i = 0
     while abs(delta).max() > eps:
@@ -93,52 +107,13 @@ def poisson_blending(source, target, mask, eps=0.001, channel=0):
     return result
 
 
-def poisson_blending_mix(source, target, mask, n, eps=0.001, channel=0):
-    ind_mask = np.nonzero(mask)
-    N = ind_mask[0].size
-    f = np.zeros(N+1)
-    f[:-1] = source[ind_mask]
-    Np = compute_Np(mask.shape)[ind_mask]
-
-    border_mask = find_border(mask)
-    target_border_masked = target*border_mask
-
-    left_x, left_y, right_x, right_y, bottom_x, bottom_y, top_x, top_y = shift_ind(mask)
-
-    b1 = (target_border_masked[left_x, left_y] + target_border_masked[right_x, right_y] +
-          target_border_masked[top_x, top_y] + target_border_masked[bottom_x, bottom_y]).reshape(mask.shape)[ind_mask]
-    b2 = (source[left_x, left_y] + source[right_x, right_y] +
-          source[top_x, top_y] + source[bottom_x, bottom_y]).reshape(mask.shape)[ind_mask]
-    b21 = (target[left_x, left_y] + target[right_x, right_y] +
-           target[top_x, top_y] + target[bottom_x, bottom_y]).reshape(mask.shape)[ind_mask]
-
-    mix = abs(Np*source[ind_mask]-b2) > abs(Np*target[ind_mask]-b21)
-    mixing = np.zeros(mask.shape)
-    mixing[ind_mask] = mix
-    plt.imsave(f'images/example{n}/mixing.png', mixing, cmap='gray')
-    b = np.where(mix, - b2 + b1 + Np*source[ind_mask], - b21 + b1 + Np*target[ind_mask])
-
-    idx = neighbours(mask)
-    delta = np.zeros(N+1)
-    delta[:-1] = A(f, Np, idx)[:-1] - b
-    i = 0
-    while abs(delta).max() > eps:
-        f = f - 0.1*delta
-        print(f"channel{channel}, step{i}, del{abs(delta).max()}")
-        delta[:-1] = A(f, Np, idx)[:-1] - b
-        i += 1
-    result = target
-    result[ind_mask] = f[:-1]
-    return result
-
-
-def example(n, eps):
+def example(n, eps, guidance='mix'):
     mask = cv.imread(f'images/example{n}/mask.png')/255
     source = cv.imread(f'images/example{n}/source.jpg')/255
     target = cv.imread(f'images/example{n}/target.jpg')/255
-    result1 = poisson_blending(source[..., 0], target[..., 0], mask[..., 0], eps=eps, channel=1)
-    result2 = poisson_blending(source[..., 1], target[..., 1], mask[..., 1], eps=eps, channel=2)
-    result3 = poisson_blending(source[..., 2], target[..., 2], mask[..., 2], eps=eps, channel=3)
+    result1 = poisson_blending(source[..., 0], target[..., 0], mask[..., 0], n, eps=eps, channel=1, guidance=guidance)
+    result2 = poisson_blending(source[..., 1], target[..., 1], mask[..., 1], n, eps=eps, channel=2, guidance=guidance)
+    result3 = poisson_blending(source[..., 2], target[..., 2], mask[..., 2], n, eps=eps, channel=3, guidance=guidance)
 
     result = np.array([result3.T, result2.T, result1.T]).T
     plt.imsave(f'images/example{n}/result_mix2.jpg', np.clip(result, 0, 1))
