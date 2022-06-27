@@ -14,6 +14,7 @@ def clear_dir(path):
         os.makedirs(path)
 
 
+# TODO: write gaussian blur on your own (check if normalized)
 def gaussian_pyramid(image, n, num, is_mask, filt_size=5, std=1):
     pyramid = [image]
     for i in range(1, n):
@@ -47,9 +48,9 @@ def reconstruct(pyramid, num):
     return result
 
 
-def multires_blend(target, source, mask, num, use_grad_mask, mask_filt_size, n=10, filt_size=5, std=1):
+def multires_blend(target, source, mask, num, n=10, filt_size=5, std=1, std_mask=100, filt_size_mask=15):
     # compute gaussian pyramid for the mask
-    gauss_mask = gaussian_pyramid(mask, n, num, True, filt_size=filt_size, std=std)
+    gauss_mask = gaussian_pyramid(mask, n, num, True, filt_size=filt_size_mask, std=std_mask)
     # compute laplacian pyramids for images
     lapl_source = laplacian_pyramid(source, n, num, filt_size=filt_size, std=std)
     lapl_target = laplacian_pyramid(target, n, num, filt_size=filt_size, std=std)
@@ -63,10 +64,11 @@ def multires_blend(target, source, mask, num, use_grad_mask, mask_filt_size, n=1
 
 def grad_mask(mask, filt_size):
     std = (filt_size-1)/3
-    return cv.GaussianBlur(mask, (filt_size, filt_size), std, std)
+    mask = cv.GaussianBlur(mask, (filt_size, filt_size), std, std)
+    return mask
 
 
-def example(num, method, use_grad_mask=True, mask_filt_size=5, **kwargs):
+def example(num, method, use_grad_mask=False, mask_filt_size=295, **kwargs):
     clear_dir(f'images/example{num}/progress/')
     clear_dir(f'images/example{num}/gaussian pyramid/')
     clear_dir(f'images/example{num}/laplacian pyramid/')
@@ -75,13 +77,14 @@ def example(num, method, use_grad_mask=True, mask_filt_size=5, **kwargs):
     # mask = cv.imread(f'images/example{num}/mask.png', cv.IMREAD_GRAYSCALE)/255
     if use_grad_mask:
         mask = grad_mask(cv.imread(f'images/example{num}/mask.png', cv.IMREAD_GRAYSCALE), mask_filt_size)/255
+        plt.imsave(f'images/example{num}/mask1.png', mask, cmap='gray')
     else:
         mask = cv.imread(f'images/example{num}/mask.png', cv.IMREAD_GRAYSCALE)/255
-    result = method(target, source, mask, num, use_grad_mask, mask_filt_size, **kwargs)
-    plt.imsave(f'images/example{num}/result.jpg', np.flip((result - result.min())/(result.max() - result.min()), axis=2))
+    result = method(target, source, mask, num, **kwargs)
+    plt.imsave(f'images/example{num}/result.jpg', np.flip(np.clip(result, 0, 1), axis=2))
 
 
 if __name__ == '__main__':
-    example(4, multires_blend, mask_filt_size=15, n=9, filt_size=5, std=1)
+    example(1, multires_blend, use_grad_mask=True, n=5, filt_size=5, std=5)
 
 # TODO: apply gaussian filter or rescale in laplacian pyramid?

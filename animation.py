@@ -3,9 +3,10 @@ import os
 
 
 def create_gif(path, out):
-    imgs = [Image.open(path + file_name) for file_name in os.listdir(path)]
+    path_sorted = sorted(os.listdir(path))
+    imgs = [Image.open(path + file_name) for file_name in path_sorted]
     img = imgs[0]
     img.save(fp=out, format='GIF', append_images=imgs,
-             save_all=True, duration=200, loop=0)
+             save_all=True, duration=150, loop=0)
 
-create_gif('multiresolution/images/example4/progress/', 'multiresolution/images/example4/progress.gif')
+create_gif('poisson/images/example12/progress/', 'poisson/images/example12/progress.gif')

@@ -1,12 +1,13 @@
 import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
+from multiresolution.multiresolution import clear_dir
 
 
 def find_border(mask):
     border = cv.filter2D(mask, cv.CV_64F, np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]]))
     border = np.where(border > 0, 1.0, 0)
-    border = border-mask
+    border = border - mask
     return border
 
 
@@ -36,7 +37,7 @@ def compute_Np(shape):
 def neighbours(mask):
     idx = np.nonzero(mask)
     mask_ind = np.zeros(mask.shape, dtype=int)
-    mask_ind[idx] = np.arange(1, idx[0].size+1, 1)
+    mask_ind[idx] = np.arange(1, idx[0].size + 1, 1)
     bottom = shift(mask_ind, -1, 0)[idx]
     top = shift(mask_ind, 1, 0)[idx]
     left = shift(mask_ind, 1, 1)[idx]
@@ -45,10 +46,10 @@ def neighbours(mask):
 
 
 def shift_ind(f):
-    left_x, left_y = np.arange(0, f.shape[0], 1), np.append(np.arange(1, f.shape[1], 1), f.shape[1]-1)
-    right_x, right_y = np.arange(0, f.shape[0], 1), np.insert(np.arange(0, f.shape[1]-1, 1), 0, 0)
-    bottom_x, bottom_y = np.append(np.arange(1, f.shape[0], 1), f.shape[0]-1), np.arange(0, f.shape[1], 1)
-    top_x, top_y = np.insert(np.arange(0, f.shape[0]-1, 1), 0, 0), np.arange(0, f.shape[1], 1)
+    left_x, left_y = np.arange(0, f.shape[0], 1), np.append(np.arange(1, f.shape[1], 1), f.shape[1] - 1)
+    right_x, right_y = np.arange(0, f.shape[0], 1), np.insert(np.arange(0, f.shape[1] - 1, 1), 0, 0)
+    bottom_x, bottom_y = np.append(np.arange(1, f.shape[0], 1), f.shape[0] - 1), np.arange(0, f.shape[1], 1)
+    top_x, top_y = np.insert(np.arange(0, f.shape[0] - 1, 1), 0, 0), np.arange(0, f.shape[1], 1)
     return (np.repeat(left_x, f.shape[1]), np.tile(left_y, f.shape[0]),
             np.repeat(right_x, f.shape[1]), np.tile(right_y, f.shape[0]),
             np.repeat(bottom_x, f.shape[1]), np.tile(bottom_y, f.shape[0]),
@@ -57,15 +58,16 @@ def shift_ind(f):
 
 def A(f, Np, ind):
     result = np.zeros(f.shape)
-    result[:-1] = Np*f[:-1] - (f[ind[0]-1] + f[ind[1]-1] + f[ind[2]-1] + f[ind[3]-1])
+    result[:-1] = Np*f[:-1] - (f[ind[0] - 1] + f[ind[1] - 1] + f[ind[2] - 1] + f[ind[3] - 1])
     return result
 
 
-def poisson_blending(source, target, mask, n, eps=0.001, channel=0, guidance='classic'):
+def poisson_blending(source, target, mask, n, eps=0.001, gamma=0.1, channel=1, save_step=100, guidance='classic',
+                     save_progress=True):
     ind_mask = np.nonzero(mask)
     N = ind_mask[0].size
-    f = np.zeros(N+1)
-    f[:-1] = source[ind_mask]
+    f = np.zeros(N + 1)
+    # f[:-1] = source[ind_mask]
     Np = compute_Np(mask.shape)[ind_mask]
 
     border_mask = find_border(mask)
@@ -78,10 +80,10 @@ def poisson_blending(source, target, mask, n, eps=0.001, channel=0, guidance='cl
     b2 = (source[left_x, left_y] + source[right_x, right_y] +
           source[top_x, top_y] + source[bottom_x, bottom_y]).reshape(mask.shape)[ind_mask]
 
-    if guidance=='classic':
+    if guidance == 'classic':
         b = - b2 + b1 + Np*source[ind_mask]
 
-    elif guidance=='mix':
+    elif guidance == 'mix':
         b21 = (target[left_x, left_y] + target[right_x, right_y] +
                target[top_x, top_y] + target[bottom_x, bottom_y]).reshape(mask.shape)[ind_mask]
         mix = abs(Np*source[ind_mask] - b2) > abs(Np*target[ind_mask] - b21)
@@ -97,17 +99,20 @@ def poisson_blending(source, target, mask, n, eps=0.001, channel=0, guidance='cl
     delta = np.zeros(N + 1)
     delta[:-1] = A(f, Np, idx)[:-1] - b
     i = 0
+    clear_dir(f'images/example{n}/progress/')
     while abs(delta).max() > eps:
-        f = f - 0.1*delta
+        f = f - gamma*delta
         print(f"channel{channel}, step{i}, del{abs(delta).max()}")
         delta[:-1] = A(f, Np, idx)[:-1] - b
+        if i%save_step == 0 and save_progress is True:
+            target[ind_mask] = f[:-1]
+            plt.imsave(f'images/example{n}/progress/chan{channel}step{i:06d}gamma{gamma}.jpg', np.clip(target, 0, 1), cmap='gray')
         i += 1
-    result = target
-    result[ind_mask] = f[:-1]
-    return result
+    target[ind_mask] = f[:-1]
+    return target
 
 
-def example(n, eps, guidance='mix'):
+def example(n, eps, guidance='classic'):
     mask = cv.imread(f'images/example{n}/mask.png')/255
     source = cv.imread(f'images/example{n}/source.jpg')/255
     target = cv.imread(f'images/example{n}/target.jpg')/255
@@ -116,7 +121,7 @@ def example(n, eps, guidance='mix'):
     result3 = poisson_blending(source[..., 2], target[..., 2], mask[..., 2], n, eps=eps, channel=3, guidance=guidance)
 
     result = np.array([result3.T, result2.T, result1.T]).T
-    plt.imsave(f'images/example{n}/result_mix2.jpg', np.clip(result, 0, 1))
+    plt.imsave(f'images/example{n}/result.jpg', np.clip(result, 0, 1))
 
 
 example(12, 0.0001)
