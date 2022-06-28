@@ -2,6 +2,8 @@ import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
 from multiresolution.multiresolution import clear_dir
+from time import time
+import iterative
 
 
 def find_border(mask):
@@ -42,7 +44,7 @@ def neighbours(mask):
     top = shift(mask_ind, 1, 0)[idx]
     left = shift(mask_ind, 1, 1)[idx]
     right = shift(mask_ind, -1, 1)[idx]
-    return top, bottom, left, right
+    return top, left, right, bottom
 
 
 def shift_ind(f):
@@ -56,17 +58,9 @@ def shift_ind(f):
             np.repeat(top_x, f.shape[1]), np.tile(top_y, f.shape[0]))
 
 
-def A(f, Np, ind):
-    result = np.zeros(f.shape)
-    result[:-1] = Np*f[:-1] - (f[ind[0] - 1] + f[ind[1] - 1] + f[ind[2] - 1] + f[ind[3] - 1])
-    return result
-
-
 def poisson_blending(source, target, mask, n, eps=0.001, gamma=0.1, channel=1, save_step=100, guidance='classic',
-                     save_progress=True):
+                     save_progress=True, method='fixed-point'):
     ind_mask = np.nonzero(mask)
-    N = ind_mask[0].size
-    f = np.zeros(N + 1)
     # f[:-1] = source[ind_mask]
     Np = compute_Np(mask.shape)[ind_mask]
 
@@ -96,32 +90,39 @@ def poisson_blending(source, target, mask, n, eps=0.001, gamma=0.1, channel=1, s
         raise ValueError('Wrong guidance field type! Available types \'classic\', \'mix\'')
 
     idx = neighbours(mask)
-    delta = np.zeros(N + 1)
-    delta[:-1] = A(f, Np, idx)[:-1] - b
-    i = 0
+    N = b.size
+    f = np.zeros(N+1)
+    delta = np.zeros(N+1)
+    delta[:-1] = iterative.iter_A(f, Np, idx)[:-1] - b
+
     clear_dir(f'images/example{n}/progress/')
-    while abs(delta).max() > eps:
-        f = f - gamma*delta
-        print(f"channel{channel}, step{i}, del{abs(delta).max()}")
-        delta[:-1] = A(f, Np, idx)[:-1] - b
-        if i%save_step == 0 and save_progress is True:
-            target[ind_mask] = f[:-1]
-            plt.imsave(f'images/example{n}/progress/chan{channel}step{i:06d}gamma{gamma}.jpg', np.clip(target, 0, 1), cmap='gray')
-        i += 1
+
+    if method == 'fixed-point':
+        f = iterative.fixed_point(f, b, delta, eps, Np, idx, gamma, channel)
+    elif method == 'gauss-seidel':
+        f = iterative.gauss_seidel(f, b, delta, eps, Np, idx, channel)
+    elif method == 'gradient-descent':
+        f = iterative.gradient_descent(f, b, delta, eps, Np, idx, gamma, channel)
     target[ind_mask] = f[:-1]
     return target
 
 
-def example(n, eps, guidance='classic'):
+def example(n, eps, guidance='classic', method='fixed-point', gamma=0.02):
     mask = cv.imread(f'images/example{n}/mask.png')/255
     source = cv.imread(f'images/example{n}/source.jpg')/255
     target = cv.imread(f'images/example{n}/target.jpg')/255
-    result1 = poisson_blending(source[..., 0], target[..., 0], mask[..., 0], n, eps=eps, channel=1, guidance=guidance)
-    result2 = poisson_blending(source[..., 1], target[..., 1], mask[..., 1], n, eps=eps, channel=2, guidance=guidance)
-    result3 = poisson_blending(source[..., 2], target[..., 2], mask[..., 2], n, eps=eps, channel=3, guidance=guidance)
+    result1 = poisson_blending(source[..., 0], target[..., 0], mask[..., 0], n, eps=eps, channel=1,
+                               guidance=guidance, method=method, gamma=gamma)
+    result2 = poisson_blending(source[..., 1], target[..., 1], mask[..., 1], n, eps=eps, channel=2,
+                               guidance=guidance, method=method, gamma=gamma)
+    result3 = poisson_blending(source[..., 2], target[..., 2], mask[..., 2], n, eps=eps, channel=3,
+                               guidance=guidance, method=method, gamma=gamma)
 
     result = np.array([result3.T, result2.T, result1.T]).T
-    plt.imsave(f'images/example{n}/result.jpg', np.clip(result, 0, 1))
+    plt.imsave(f'images/example{n}/result_gs.jpg', np.clip(result, 0, 1))
 
 
-example(12, 0.0001)
+start = time()
+example(12, 0.0001, method='gauss-seidel', gamma=0.25)
+print(round(-start+time(), 3), 'sec')
+
